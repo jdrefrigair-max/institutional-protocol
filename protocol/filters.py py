@@ -1,0 +1,99 @@
+"""
+Institutional Protocol – Core Filters
+
+Visible filters:
+1. Recent Form (last 4–6 runs)
+2. WFA / Weight
+3. BM Ability (distance + weight + going context)
+
+Background factors (invisible):
+- Track condition / going evidence
+- Track geometry
+- Distance suitability
+"""
+
+from typing import Dict, Any
+from config.settings import NO_GOING_EVIDENCE_MULTIPLIER
+
+
+def assess_recent_form(runner: Dict[str, Any], max_runs: int = 6) -> str:
+    """
+    Returns: Pass | Border | Fail
+    Based on last 4–6 runs (margins, class, consistency).
+    """
+    form_score = runner.get("form_score")
+    if form_score is None:
+        return "Border"
+    if form_score >= 7:
+        return "Pass"
+    if form_score >= 4:
+        return "Border"
+    return "Fail"
+
+
+def assess_wfa_weight(runner: Dict[str, Any]) -> str:
+    """
+    Returns: Pass | Border | Fail
+    Weight relative to previous successful runs and WFA scale.
+    """
+    weight_delta = runner.get("weight_delta")
+    if weight_delta is None:
+        return "Border"
+    if weight_delta <= 1.5:
+        return "Pass"
+    if weight_delta <= 3.0:
+        return "Border"
+    return "Fail"
+
+
+def assess_bm_ability(runner: Dict[str, Any], track_condition: str = "Good") -> str:
+    """
+    Returns: Pass | Border | Fail
+
+    Combines:
+    - Ability to run to the BM at today’s weight
+    - Distance suitability
+    - Track condition evidence (background)
+
+    Rule: No runs on the expected going is NOT an automatic Fail.
+    It only makes the assessment more conservative and raises assessed price.
+    """
+    has_going_evidence = runner.get("has_runs_on_going", False)
+    distance_proven = runner.get("distance_proven", False)
+    bm_fit = runner.get("bm_fit_score", 5)  # 1–10 placeholder
+
+    if bm_fit >= 7 and distance_proven:
+        base = "Pass"
+    elif bm_fit >= 5:
+        base = "Border"
+    else:
+        base = "Fail"
+
+    # Going evidence only softens or tightens – never hard fails on its own
+    if not has_going_evidence and base == "Pass":
+        return "Border"
+
+    return base
+
+
+def evaluate_runner(runner: Dict[str, Any], track_condition: str = "Good") -> Dict[str, Any]:
+    """
+    Run all three visible filters + prepare assessed price context.
+    """
+    recent = assess_recent_form(runner)
+    wfa = assess_wfa_weight(runner)
+    bm = assess_bm_ability(runner, track_condition)
+
+    is_qualifier = recent == "Pass" and wfa == "Pass" and bm == "Pass"
+
+    assessed_multiplier = 1.0
+    if not runner.get("has_runs_on_going", False):
+        assessed_multiplier = NO_GOING_EVIDENCE_MULTIPLIER
+
+    return {
+        "recent_form": recent,
+        "wfa": wfa,
+        "bm_ability": bm,
+        "is_qualifier": is_qualifier,
+        "assessed_multiplier": assessed_multiplier,
+    }
